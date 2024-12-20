@@ -7,13 +7,47 @@ import re
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
+# Retry function to handle unstable connections with user prompt at the end
+def fetch_with_retry(url, retries=3):
+    """Attempt to fetch a URL with retries in case of failure."""
+    attempt = 0
+    wait_times = [10, 20, 30]  # Retry waits in seconds
+    while attempt < retries:
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                return response
+            else:
+                print(f"Failed to retrieve the page. Status code: {response.status_code}")
+                raise Exception("Non-200 status code")
+        except (requests.exceptions.RequestException, Exception) as e:
+            attempt += 1
+            print(f"Attempt {attempt} failed: {e}")
+            if attempt < retries:
+                wait_time = wait_times[attempt - 1]  # Get the corresponding wait time for this attempt
+                print(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"Failed after {retries} attempts.")
+
+                # Prompt the user to continue or stop
+                while True:
+                    user_input = input("Do you want to continue trying? (y/n): ").lower()
+                    if user_input == 'y':
+                        print("Retrying...")
+                        return fetch_with_retry(url, retries)  # Retry the entire process
+                    elif user_input == 'n':
+                        print("Exiting program.")
+                        return None  # Return None to indicate failure
+                    else:
+                        print("Invalid input. Please enter 'y' or 'n'.")
+    return None
+
 # Extract CID from a phytochemical's detailed page
 def extract_cid(identifier):
     detailed_page_url = f"https://cb.imsc.res.in/imppat/phytochemical-detailedpage/{identifier}"
-    response = requests.get(detailed_page_url)
-    time.sleep(2)  # Delay to prevent overloading the server
-    if response.status_code != 200:
-        print(f"Failed to retrieve the CID data. Status code: {response.status_code}")
+    response = fetch_with_retry(detailed_page_url)
+    if response is None:
         return None
 
     # Parse the page content
@@ -35,11 +69,8 @@ def extract_cid(identifier):
 # Retrieve the SMILES string for a compound using PubChem API
 def get_smiles_from_pubchem(cid):
     pubchem_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/TXT"
-    print(f"PubChem URL: {pubchem_url}")
-    response = requests.get(pubchem_url)
-    time.sleep(2)  # Delay to prevent overloading the server
-    if response.status_code != 200:
-        print(f"Failed to retrieve the SMILES data from PubChem. Status code: {response.status_code}")
+    response = fetch_with_retry(pubchem_url)
+    if response is None:
         return "N/A"
 
     return response.text.strip()
@@ -63,24 +94,21 @@ def download_structure(identifier, structure_folder, file_format):
         print(f"Invalid file format: {file_format}")
         return "Not found"
 
-    response = requests.get(structure_url)
-    if response.status_code == 200:
-        # Save the file with the selected extension
-        with open(os.path.join(structure_folder, f"{identifier}_3D{extension}"), 'wb') as file:
-            file.write(response.content)
-        print(f"Downloaded 3D structure for {identifier} in {file_format} format")
-        return "Downloaded"
-    else:
-        print(f"Failed to download 3D structure for {identifier}")
+    response = fetch_with_retry(structure_url)
+    if response is None:
         return "Not found"
+
+    # Save the file with the selected extension
+    with open(os.path.join(structure_folder, f"{identifier}_3D{extension}"), 'wb') as file:
+        file.write(response.content)
+    print(f"Downloaded 3D structure for {identifier} in {file_format} format")
+    return "Downloaded"
 
 # Search for phytochemicals associated with a given plant
 def search_plant(plant_name, structure_folder, file_format):
     plant_page_url = f"https://cb.imsc.res.in/imppat/phytochemical/{plant_name.replace(' ', '%20')}"
-    response = requests.get(plant_page_url)
-    time.sleep(2)  # Delay to prevent overloading the server
-    if response.status_code != 200:
-        print(f"Failed to retrieve the search results. Status code: {response.status_code}")
+    response = fetch_with_retry(plant_page_url)
+    if response is None:
         return []
 
     # Parse the page content
@@ -204,13 +232,13 @@ def main():
         os.makedirs(structure_folder, exist_ok=True)
         file_name = f"{safe_plant_name}.xlsx"
         file_path = os.path.join(plant_folder, file_name)
+        
+        # Get the plant data and save to Excel
         plant_info = search_plant(plant_name, structure_folder, file_format)
         if plant_info:
             save_to_excel(plant_info, file_path)
-            print(f"Data for {plant_name} has been saved to {file_path}")
-        else:
-            print(f"No data found for {plant_name}.")
+            print(f"Results saved to {file_path}")
 
+# Run the main function
 if __name__ == "__main__":
     main()
-
