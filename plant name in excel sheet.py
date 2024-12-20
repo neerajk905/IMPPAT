@@ -44,21 +44,38 @@ def get_smiles_from_pubchem(cid):
 
     return response.text.strip()
 
-# Download the 3D structure file for a compound
-def download_structure(identifier, structure_folder):
-    structure_url = f"https://cb.imsc.res.in/imppat/images/3D/MOL/{identifier}_3D.mol"
+# Download the 3D structure file for a compound in the selected format
+def download_structure(identifier, structure_folder, file_format):
+    # Define the URL pattern based on the chosen file format
+    if file_format == "SDF":
+        structure_url = f"https://cb.imsc.res.in/imppat/images/3D/SDF/{identifier}_3D.sdf"
+        extension = ".sdf"
+    elif file_format == "MOL":
+        structure_url = f"https://cb.imsc.res.in/imppat/images/3D/MOL/{identifier}_3D.mol"
+        extension = ".mol"
+    elif file_format == "PDB":
+        structure_url = f"https://cb.imsc.res.in/imppat/images/3D/PDB/{identifier}_3D.pdb"
+        extension = ".pdb"
+    elif file_format == "PDBQT":
+        structure_url = f"https://cb.imsc.res.in/imppat/images/3D/PDBQT/{identifier}_3D.pdbqt"
+        extension = ".pdbqt"
+    else:
+        print(f"Invalid file format: {file_format}")
+        return "Not found"
+
     response = requests.get(structure_url)
     if response.status_code == 200:
-        with open(os.path.join(structure_folder, f"{identifier}_3D.mol"), 'wb') as file:
+        # Save the file with the selected extension
+        with open(os.path.join(structure_folder, f"{identifier}_3D{extension}"), 'wb') as file:
             file.write(response.content)
-        print(f"Downloaded 3D structure for {identifier}")
+        print(f"Downloaded 3D structure for {identifier} in {file_format} format")
         return "Downloaded"
     else:
         print(f"Failed to download 3D structure for {identifier}")
         return "Not found"
 
 # Search for phytochemicals associated with a given plant
-def search_plant(plant_name, structure_folder):
+def search_plant(plant_name, structure_folder, file_format):
     plant_page_url = f"https://cb.imsc.res.in/imppat/phytochemical/{plant_name.replace(' ', '%20')}"
     response = requests.get(plant_page_url)
     time.sleep(2)  # Delay to prevent overloading the server
@@ -81,7 +98,7 @@ def search_plant(plant_name, structure_folder):
                 cid = extract_cid(identifier)
                 if cid:
                     smiles = get_smiles_from_pubchem(cid)
-                    structure_status = download_structure(identifier, structure_folder)
+                    structure_status = download_structure(identifier, structure_folder, file_format)
                     hyperlink = f"https://cb.imsc.res.in/imppat/phytochemical-detailedpage/{identifier}" if structure_status == "Not found" else ""
                     plant_info.append([identifier, phytochemical_name, cid, smiles, structure_status, hyperlink])
 
@@ -149,6 +166,29 @@ def main():
         else:
             print("Invalid directory. Please enter a valid location.")
 
+    # Prompt for file format choice
+    print("Choose the format for 3D structure file:")
+    print("1. SDF")
+    print("2. MOL")
+    print("3. PDB")
+    print("4. PDBQT")
+    while True:
+        choice = input("Enter the number corresponding to your choice: ")
+        if choice == "1":
+            file_format = "SDF"
+            break
+        elif choice == "2":
+            file_format = "MOL"
+            break
+        elif choice == "3":
+            file_format = "PDB"
+            break
+        elif choice == "4":
+            file_format = "PDBQT"
+            break
+        else:
+            print("Invalid choice. Please enter a valid number.")
+
     # Load the input Excel file
     df = pd.read_excel(excel_path)
     if 'Plant Name' not in df.columns:
@@ -164,7 +204,7 @@ def main():
         os.makedirs(structure_folder, exist_ok=True)
         file_name = f"{safe_plant_name}.xlsx"
         file_path = os.path.join(plant_folder, file_name)
-        plant_info = search_plant(plant_name, structure_folder)
+        plant_info = search_plant(plant_name, structure_folder, file_format)
         if plant_info:
             save_to_excel(plant_info, file_path)
             print(f"Data for {plant_name} has been saved to {file_path}")
@@ -173,3 +213,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
